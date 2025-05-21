@@ -574,96 +574,198 @@ public class WebRTCEngine implements IEngine, Peer.IPeerEvent {
             return;
         }
 
-        if (_localVideoTrack == null) {
-            Log.e(TAG, "Local video track is not available for recording.");
+        if (_localVideoTrack == null && !mIsAudioOnly) { // Only critical if video is expected
+            Log.e(TAG, "Local video track is not available for video recording.");
             return;
         }
 
-        try {
-            File outputFile = new File(filePath);
-            File parentDir = outputFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                parentDir.mkdirs();
+        Log.d(TAG, "startRecording called. Attempting to record to filePath: " + filePath);
+        File outputFile = new File(filePath);
+        File parentDir = outputFile.getParentFile();
+        if (parentDir != null && !parentDir.exists()) {
+            boolean dirCreated = parentDir.mkdirs();
+            if (dirCreated) {
+                Log.i(TAG, "Recording directory created: " + parentDir.getAbsolutePath());
+            } else {
+                Log.e(TAG, "Failed to create recording directory: " + parentDir.getAbsolutePath());
+                // Consider returning or throwing an exception as setOutputFile will likely fail
+                return;
             }
-            currentRecordingFilePath = filePath;
+        } else if (parentDir == null) {
+             Log.e(TAG, "Parent directory is null for filePath: " + filePath);
+             // Consider returning or throwing an exception
+             return;
+        }
+        currentRecordingFilePath = filePath; // Set early for releaseMediaRecorderOnError
 
+        try {
             mediaRecorder = new MediaRecorder();
+            Log.i(TAG, "MediaRecorder new instance created.");
 
-            // Set audio source
-            // Note: Using VOICE_COMMUNICATION might require MODIFY_AUDIO_SETTINGS permission.
-            // If audio from the WebRTC track is needed directly, a more complex setup
-            // involving an AudioRecord and piping data would be necessary, or if WebRTC
-            // provides a direct way to tap into its processed audio stream.
-            // For simplicity, VOICE_COMMUNICATION is used here.
+            // 设置音频源
             mediaRecorder.setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION);
-            mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+            Log.i(TAG, "Audio source set to VOICE_COMMUNICATION.");
+
+            // 设置视频源 (如果不是仅音频)
+            if (!mIsAudioOnly) {
+                mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+                Log.i(TAG, "Video source set to SURFACE.");
+            }
+
+            // 设置输出格式
             mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
-            mediaRecorder.setOutputFile(currentRecordingFilePath);
+            Log.i(TAG, "Output format set to MPEG_4.");
+
+            // 设置输出文件
+            mediaRecorder.setOutputFile(filePath); // Use the validated filePath
+            Log.i(TAG, "Output file set to: " + filePath);
+
+            // 设置音频编码器
             mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-            mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-            mediaRecorder.setVideoSize(VIDEO_RESOLUTION_WIDTH, VIDEO_RESOLUTION_HEIGHT);
-            mediaRecorder.setVideoFrameRate(FPS);
-            mediaRecorder.setVideoEncodingBitRate(2000 * 1000); // 2Mbps
+            Log.i(TAG, "Audio encoder set to AAC.");
 
+            // 设置视频编码器、尺寸、帧率等 (如果不是仅音频)
+            if (!mIsAudioOnly) {
+                mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+                Log.i(TAG, "Video encoder set to H264.");
+                mediaRecorder.setVideoSize(VIDEO_RESOLUTION_WIDTH, VIDEO_RESOLUTION_HEIGHT);
+                Log.i(TAG, "Video size set to " + VIDEO_RESOLUTION_WIDTH + "x" + VIDEO_RESOLUTION_HEIGHT);
+                mediaRecorder.setVideoFrameRate(FPS);
+                Log.i(TAG, "Video frame rate set to " + FPS);
+                mediaRecorder.setVideoEncodingBitRate(2000 * 1000); // 例如 2Mbps
+                Log.i(TAG, "Video encoding bit rate set to 2000kbps.");
+                // mediaRecorder.setOrientationHint(0); // 可选，根据需要设置
+            }
+
+            Log.i(TAG, "MediaRecorder configuration complete. Calling prepare().");
             mediaRecorder.prepare();
+            Log.i(TAG, "MediaRecorder prepare() successful.");
 
-            mediaRecorderSurface = mediaRecorder.getSurface();
-
-            // Create a new ProxyVideoSink for the MediaRecorder surface
-            mediaRecorderVideoSink = new ProxyVideoSink();
-            mediaRecorderVideoSink.setTarget(mediaRecorderSurface);
-            _localVideoTrack.addSink(mediaRecorderVideoSink);
-
+            // 连接 WebRTC 视频轨道到 MediaRecorder Surface (如果不是仅音频)
+            if (!mIsAudioOnly && _localVideoTrack != null) {
+                Log.i(TAG, "Attempting to connect WebRTC video track to MediaRecorder surface.");
+                mediaRecorderSurface = mediaRecorder.getSurface();
+                if (mediaRecorderSurface == null) {
+                    Log.e(TAG, "MediaRecorder.getSurface() returned null. Cannot record video.");
+                    releaseMediaRecorderOnError(); // Use helper to release
+                    return;
+                }
+                mediaRecorderVideoSink = new ProxyVideoSink();
+                mediaRecorderVideoSink.setTarget(mediaRecorderSurface);
+                _localVideoTrack.addSink(mediaRecorderVideoSink);
+                Log.i(TAG, "VideoTrack added to MediaRecorder sink. Surface: " + mediaRecorderSurface);
+            } else if (!mIsAudioOnly) {
+                Log.w(TAG, "_localVideoTrack is null, cannot record video stream.");
+                // This might be an acceptable state if only audio is desired despite mIsAudioOnly being false
+                // Or it could be an error state. For now, we proceed to record audio only.
+            }
 
             mediaRecorder.start();
+            Log.i(TAG, "MediaRecorder start() successful. Recording started.");
             isRecording = true;
-            Log.d(TAG, "Recording started: " + currentRecordingFilePath);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start recording", e);
-            // Release resources if preparation or start failed
-            if (mediaRecorder != null) {
-                mediaRecorder.reset();
-                mediaRecorder.release();
-                mediaRecorder = null;
-            }
-            if (mediaRecorderVideoSink != null) {
-                _localVideoTrack.removeSink(mediaRecorderVideoSink);
-                mediaRecorderVideoSink = null;
-            }
-            mediaRecorderSurface = null; // Surface is managed by MediaRecorder, released with it
-            isRecording = false;
-            currentRecordingFilePath = null;
+            // ... (通知UI等)
+
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "MediaRecorder IllegalStateException in startRecording: " + e.getMessage(), e);
+            releaseMediaRecorderOnError();
+        } catch (java.io.IOException e) {
+            Log.e(TAG, "MediaRecorder IOException in prepare(): " + e.getMessage(), e);
+            releaseMediaRecorderOnError();
+        } catch (Exception e) { // Catch any other runtime exceptions
+            Log.e(TAG, "MediaRecorder Generic Exception in startRecording: " + e.getMessage(), e);
+            releaseMediaRecorderOnError();
         }
     }
 
     public void stopRecording() {
-        if (!isRecording) {
-            Log.w(TAG, "Recording is not in progress.");
+        Log.i(TAG, "stopRecording called.");
+        if (!isRecording || mediaRecorder == null) {
+            Log.w(TAG, "Not recording or mediaRecorder is null. Ignoring stopRecording call.");
             return;
         }
 
         try {
+            // 移除视频轨道 sink (如果存在)
+            if (!mIsAudioOnly && _localVideoTrack != null && mediaRecorderVideoSink != null) {
+                _localVideoTrack.removeSink(mediaRecorderVideoSink);
+                mediaRecorderVideoSink.setTarget(null); // 清理 target
+                mediaRecorderVideoSink = null;
+                Log.i(TAG, "VideoTrack removed from MediaRecorder sink.");
+            }
+            if (mediaRecorderSurface != null) {
+                mediaRecorderSurface.release(); // 释放 Surface
+                mediaRecorderSurface = null;
+                Log.i(TAG, "MediaRecorder surface released.");
+            }
+
+            mediaRecorder.stop();
+            Log.i(TAG, "MediaRecorder stop() successful.");
+            mediaRecorder.reset();
+            Log.i(TAG, "MediaRecorder reset() successful.");
+            mediaRecorder.release();
+            Log.i(TAG, "MediaRecorder release() successful.");
+            mediaRecorder = null; // Important: set to null after release
+            isRecording = false;
+            Log.i(TAG, "Recording stopped and MediaRecorder released. File saved at: " + currentRecordingFilePath);
+            // ... (通知UI文件已保存等)
+
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "MediaRecorder IllegalStateException in stopRecording: " + e.getMessage(), e);
+            // 即使出错，也尝试清理资源
             if (mediaRecorder != null) {
-                mediaRecorder.stop();
-                mediaRecorder.reset();
-                mediaRecorder.release();
+                try {
+                    mediaRecorder.reset();
+                    mediaRecorder.release();
+                } catch (Exception ex) {
+                    Log.e(TAG, "Exception during reset/release in stopRecording error handling: " + ex.getMessage(), ex);
+                }
                 mediaRecorder = null;
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error stopping MediaRecorder", e);
-        } finally {
-            if (mediaRecorderVideoSink != null && _localVideoTrack != null) {
-                _localVideoTrack.removeSink(mediaRecorderVideoSink);
-                mediaRecorderVideoSink = null;
+            isRecording = false; // 重置状态
+        } catch (Exception e) { // Catch any other runtime exceptions
+            Log.e(TAG, "MediaRecorder Generic Exception in stopRecording: " + e.getMessage(), e);
+            if (mediaRecorder != null) {
+                try {
+                    mediaRecorder.reset();
+                    mediaRecorder.release();
+                } catch (Exception ex) {
+                     Log.e(TAG, "Exception during reset/release in stopRecording error handling: " + ex.getMessage(), ex);
+                }
+                mediaRecorder = null;
             }
-            // mediaRecorderSurface is released when mediaRecorder is released.
-            mediaRecorderSurface = null;
             isRecording = false;
-            Log.d(TAG, "Recording stopped. File: " + currentRecordingFilePath);
-            // Optionally, notify a callback with currentRecordingFilePath
-            currentRecordingFilePath = null;
         }
+        currentRecordingFilePath = null; // 清理路径
     }
+
+
+    private void releaseMediaRecorderOnError() {
+        Log.w(TAG, "Releasing MediaRecorder due to an error.");
+        if (mediaRecorder != null) {
+            try {
+                mediaRecorder.reset();
+                mediaRecorder.release();
+            } catch (Exception e) {
+                Log.e(TAG, "Exception during MediaRecorder.reset/release in error handling: " + e.getMessage(), e);
+            }
+            mediaRecorder = null;
+        }
+        // 确保 video sink 也被清理
+        if (!mIsAudioOnly && _localVideoTrack != null && mediaRecorderVideoSink != null) {
+             _localVideoTrack.removeSink(mediaRecorderVideoSink);
+             mediaRecorderVideoSink.setTarget(null);
+             mediaRecorderVideoSink = null;
+             Log.i(TAG, "VideoTrack removed from MediaRecorder sink during error handling.");
+        }
+        if (mediaRecorderSurface != null) {
+            mediaRecorderSurface.release();
+            mediaRecorderSurface = null;
+            Log.i(TAG, "MediaRecorder surface released during error handling.");
+        }
+        isRecording = false;
+        currentRecordingFilePath = null;
+    }
+
 
     /**
      * 创建媒体方式
