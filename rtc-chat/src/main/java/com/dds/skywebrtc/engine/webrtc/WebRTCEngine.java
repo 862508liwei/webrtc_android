@@ -50,9 +50,17 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import android.media.MediaRecorder;
+import android.view.Surface;
+import java.io.File;
+
 
 public class WebRTCEngine implements IEngine, Peer.IPeerEvent {
     private final static String TAG = SkyLog.createTag(WebRTCEngine.class.getSimpleName());
+    private MediaRecorder mediaRecorder;
+    private Surface mediaRecorderSurface;
+    private String currentRecordingFilePath;
+    private boolean isRecording = false;
     private PeerConnectionFactory _factory;
     private EglBase mRootEglBase;
 
@@ -86,6 +94,8 @@ public class WebRTCEngine implements IEngine, Peer.IPeerEvent {
     private final Context mContext;
     private final AudioManager audioManager;
     private boolean isSpeakerOn = true;
+    private ProxyVideoSink mediaRecorderVideoSink;
+
 
     public WebRTCEngine(boolean mIsAudioOnly, Context mContext) {
         this.mIsAudioOnly = mIsAudioOnly;
@@ -292,6 +302,14 @@ public class WebRTCEngine implements IEngine, Peer.IPeerEvent {
             videoSource = null;
         }
 
+        if (_localVideoTrack != null && mediaRecorderVideoSink != null) {
+            _localVideoTrack.removeSink(mediaRecorderVideoSink);
+            mediaRecorderVideoSink = null;
+        }
+        if (isRecording) {
+            stopRecording();
+        }
+
         if (localRenderer != null) {
             localRenderer.release();
             localRenderer = null;
@@ -460,6 +478,15 @@ public class WebRTCEngine implements IEngine, Peer.IPeerEvent {
         // 停止预览
         stopPreview();
 
+        if (isRecording) {
+            stopRecording(); // Ensure recording is stopped and resources are released
+        }
+        if (_localVideoTrack != null && mediaRecorderVideoSink != null) {
+            _localVideoTrack.removeSink(mediaRecorderVideoSink);
+            mediaRecorderVideoSink = null;
+        }
+
+
         if (_factory != null) {
             _factory.dispose();
             _factory = null;
@@ -539,6 +566,103 @@ public class WebRTCEngine implements IEngine, Peer.IPeerEvent {
             _localVideoTrack = _factory.createVideoTrack(VIDEO_TRACK_ID, videoSource);
         }
 
+    }
+
+    public void startRecording(String filePath) {
+        if (isRecording) {
+            Log.w(TAG, "Recording is already in progress.");
+            return;
+        }
+
+        if (_localVideoTrack == null) {
+            Log.e(TAG, "Local video track is not available for recording.");
+            return;
+        }
+
+        try {
+            File outputFile = new File(filePath);
+            File parentDir = outputFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs();
+            }
+            currentRecordingFilePath = filePath;
+
+            mediaRecorder = new MediaRecorder();
+
+            // Set audio source
+            // Note: Using VOICE_COMMUNICATION might require MODIFY_AUDIO_SETTINGS permission.
+            // If audio from the WebRTC track is needed directly, a more complex setup
+            // involving an AudioRecord and piping data would be necessary, or if WebRTC
+            // provides a direct way to tap into its processed audio stream.
+            // For simplicity, VOICE_COMMUNICATION is used here.
+            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION);
+            mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            mediaRecorder.setOutputFile(currentRecordingFilePath);
+            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+            mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+            mediaRecorder.setVideoSize(VIDEO_RESOLUTION_WIDTH, VIDEO_RESOLUTION_HEIGHT);
+            mediaRecorder.setVideoFrameRate(FPS);
+            mediaRecorder.setVideoEncodingBitRate(2000 * 1000); // 2Mbps
+
+            mediaRecorder.prepare();
+
+            mediaRecorderSurface = mediaRecorder.getSurface();
+
+            // Create a new ProxyVideoSink for the MediaRecorder surface
+            mediaRecorderVideoSink = new ProxyVideoSink();
+            mediaRecorderVideoSink.setTarget(mediaRecorderSurface);
+            _localVideoTrack.addSink(mediaRecorderVideoSink);
+
+
+            mediaRecorder.start();
+            isRecording = true;
+            Log.d(TAG, "Recording started: " + currentRecordingFilePath);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start recording", e);
+            // Release resources if preparation or start failed
+            if (mediaRecorder != null) {
+                mediaRecorder.reset();
+                mediaRecorder.release();
+                mediaRecorder = null;
+            }
+            if (mediaRecorderVideoSink != null) {
+                _localVideoTrack.removeSink(mediaRecorderVideoSink);
+                mediaRecorderVideoSink = null;
+            }
+            mediaRecorderSurface = null; // Surface is managed by MediaRecorder, released with it
+            isRecording = false;
+            currentRecordingFilePath = null;
+        }
+    }
+
+    public void stopRecording() {
+        if (!isRecording) {
+            Log.w(TAG, "Recording is not in progress.");
+            return;
+        }
+
+        try {
+            if (mediaRecorder != null) {
+                mediaRecorder.stop();
+                mediaRecorder.reset();
+                mediaRecorder.release();
+                mediaRecorder = null;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error stopping MediaRecorder", e);
+        } finally {
+            if (mediaRecorderVideoSink != null && _localVideoTrack != null) {
+                _localVideoTrack.removeSink(mediaRecorderVideoSink);
+                mediaRecorderVideoSink = null;
+            }
+            // mediaRecorderSurface is released when mediaRecorder is released.
+            mediaRecorderSurface = null;
+            isRecording = false;
+            Log.d(TAG, "Recording stopped. File: " + currentRecordingFilePath);
+            // Optionally, notify a callback with currentRecordingFilePath
+            currentRecordingFilePath = null;
+        }
     }
 
     /**

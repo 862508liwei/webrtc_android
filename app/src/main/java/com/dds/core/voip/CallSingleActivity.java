@@ -115,9 +115,9 @@ public class CallSingleActivity extends BaseActivity implements CallSession.Call
             // 权限检测
             String[] per;
             if (isAudioOnly) {
-                per = new String[]{Manifest.permission.RECORD_AUDIO};
+                per = new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE};
             } else {
-                per = new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA};
+                per = new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE};
             }
             Permissions.request(this, per, integer -> {
                 Log.d(TAG, "Permissions.request integer = " + integer);

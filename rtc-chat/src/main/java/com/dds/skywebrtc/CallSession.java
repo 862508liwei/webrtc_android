@@ -202,6 +202,24 @@ public class CallSession implements EngineCallback {
         iEngine.switchCamera();
     }
 
+    // 开始录制
+    public void startRecording(String filePath) {
+        executor.execute(() -> {
+            if (iEngine != null) {
+                iEngine.startRecording(filePath);
+            }
+        });
+    }
+
+    // 停止录制
+    public void stopRecording() {
+        executor.execute(() -> {
+            if (iEngine != null) {
+                iEngine.stopRecording();
+            }
+        });
+    }
+
     // 释放资源
     private void release(EnumType.CallEndReason reason) {
         executor.execute(() -> {

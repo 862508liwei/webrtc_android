@@ -5,6 +5,23 @@ import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.RelativeLayout;
+import android.widget.ImageButton;
+import android.widget.Chronometer;
+import android.widget.Toast;
+import android.os.Environment;
+import java.io.File;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.FileProvider;
+import com.dds.webrtc.BuildConfig;
+import com.dds.webrtc.R;
 
 
 import com.dds.App;
@@ -28,6 +45,11 @@ public class FragmentAudio extends SingleCallFragment implements View.OnClickLis
     private boolean micEnabled = false; // 静音
     private boolean isSpeakerOn = false; // 扬声器
 
+    private ImageButton recordButtonAudio;
+    private Chronometer recordingTimerAudio;
+    private boolean isRecording = false;
+    private String currentRecordingFilePath;
+
     @Override
     int getLayout() {
         return R.layout.fragment_audio;
@@ -39,6 +61,13 @@ public class FragmentAudio extends SingleCallFragment implements View.OnClickLis
         muteImageView = view.findViewById(R.id.muteImageView);
         speakerImageView = view.findViewById(R.id.speakerImageView);
         minimizeImageView.setVisibility(View.GONE);
+
+        recordButtonAudio = view.findViewById(R.id.recordButtonAudio);
+        recordingTimerAudio = view.findViewById(R.id.recordingTimerAudio);
+        if (recordButtonAudio != null) {
+            recordButtonAudio.setOnClickListener(this);
+        }
+
         outgoingHangupImageView.setOnClickListener(this);
         incomingHangupImageView.setOnClickListener(this);
         minimizeImageView.setOnClickListener(this);
@@ -147,5 +176,110 @@ public class FragmentAudio extends SingleCallFragment implements View.OnClickLis
                 callSingleActivity.showFloatingView();
             }
         }
+
+        // 录制按钮
+        if (id == R.id.recordButtonAudio) {
+            handleRecordButtonAudioClick();
+        }
     }
+
+    private void handleRecordButtonAudioClick() {
+        if (!isRecording) {
+            // Start recording
+            File movieDir = null;
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.FROYO) {
+                movieDir = getContext().getExternalFilesDir(Environment.DIRECTORY_MUSIC); // Use DIRECTORY_MUSIC for audio
+            }
+            if (movieDir == null) {
+                Toast.makeText(getContext(), "Failed to access storage for recording.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            File file = new File(movieDir, "skywebrtc_audio_record_" + System.currentTimeMillis() + ".mp3"); // or .aac, .wav
+            currentRecordingFilePath = file.getAbsolutePath();
+
+            SkyEngineKit.Instance().startRecording(currentRecordingFilePath); // Assuming SkyEngineKit handles audio-only recording correctly
+
+            recordButtonAudio.setImageResource(android.R.drawable.ic_media_pause); // Update to "stop" icon (using pause as placeholder)
+            recordingTimerAudio.setBase(android.os.SystemClock.elapsedRealtime());
+            recordingTimerAudio.setVisibility(View.VISIBLE);
+            recordingTimerAudio.start();
+            isRecording = true;
+            Toast.makeText(getContext(), "Recording started", Toast.LENGTH_SHORT).show();
+        } else {
+            // Stop recording
+            SkyEngineKit.Instance().stopRecording();
+
+            recordButtonAudio.setImageResource(android.R.drawable.ic_btn_speak_now); // Update to "start" icon
+            recordingTimerAudio.stop();
+            recordingTimerAudio.setVisibility(View.GONE);
+            isRecording = false;
+            if (currentRecordingFilePath != null) {
+                Toast.makeText(getContext(), "Recording saved: " + new File(currentRecordingFilePath).getName(), Toast.LENGTH_LONG).show();
+                showSaveNotification(currentRecordingFilePath, false); // false for audio
+            }
+        }
+    }
+
+    private static final String RECORDING_CHANNEL_ID = "recording_channel";
+    private int notificationIdCounter = 1000; // Start audio notifications from a different range if needed, or use a global counter
+
+    private void showSaveNotification(String filePath, boolean isVideo) {
+        if (getContext() == null) return;
+
+        Context context = getContext();
+        NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
+
+        // Create Notification Channel for Android O and above
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    RECORDING_CHANNEL_ID,
+                    "Recordings",
+                    NotificationManager.IMPORTANCE_DEFAULT
+            );
+            channel.setDescription("Notifications for saved call recordings");
+            notificationManager.createNotificationChannel(channel);
+        }
+
+        File file = new File(filePath);
+        Uri fileUri = FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".provider", file);
+
+        Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+        // Use "audio/mp3" for mp3 files, or "audio/*" for general audio
+        viewIntent.setDataAndType(fileUri, isVideo ? "video/mp4" : "audio/mp3");
+        viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        viewIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                context,
+                (int) System.currentTimeMillis(), // Unique request code
+                viewIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, RECORDING_CHANNEL_ID)
+                .setSmallIcon(R.drawable.av_default_header) // Replace with a more suitable icon
+                .setContentTitle("Recording Saved")
+                .setContentText("Tap to view your " + (isVideo ? "video" : "audio") + " recording.")
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true);
+
+        notificationManager.notify(notificationIdCounter++, builder.build());
+    }
+
+
+    @Override
+    public void onDestroyView() {
+        super.onDestroyView();
+        // Ensure recording is stopped if fragment is destroyed while recording
+        if (isRecording) {
+            SkyEngineKit.Instance().stopRecording();
+            isRecording = false;
+            if (recordingTimerAudio != null) {
+                recordingTimerAudio.stop();
+                recordingTimerAudio.setVisibility(View.GONE);
+            }
+        }
+    }
+
 }

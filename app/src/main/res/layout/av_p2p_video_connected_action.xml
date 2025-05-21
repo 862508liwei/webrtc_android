@@ -25,6 +25,38 @@
             android:gravity="center"
             android:orientation="vertical">
 
+            <ImageButton
+                android:id="@+id/recordButtonVideo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@android:drawable/presence_video_online"
+                android:contentDescription="Record" />
+
+            <Chronometer
+                android:id="@+id/recordingTimerVideo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@android:color/white"
+                android:visibility="gone" />
+            <TextView
+                android:id="@+id/record_tips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Record"
+                android:textColor="@android:color/white" />
+
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
             <ImageView
                 android:id="@+id/connectedAudioOnlyImageView"
                 android:layout_width="wrap_content"
@@ -83,6 +115,8 @@
                 android:textColor="@android:color/white" />
 
         </LinearLayout>
+
+
     </LinearLayout>
 
 </LinearLayout>

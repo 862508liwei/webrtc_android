@@ -193,5 +193,42 @@ public class SkyEngineKit {
         return this.mCurrentCallSession;
     }
 
+    /**
+     * 开始录制通话内容。
+     * 录制的是本地看到的视频流和听到的音频流。
+     *
+     * @param filePath 录制文件的完整路径。
+     */
+    public void startRecording(String filePath) {
+        if (avEngineKit == null) {
+            Log.e(TAG, "startRecording error, please init first");
+            return;
+        }
+        if (mCurrentCallSession == null) {
+            Log.e(TAG, "startRecording error, mCurrentCallSession is null");
+            return;
+        }
+        if (TextUtils.isEmpty(filePath)) {
+            Log.e(TAG, "startRecording error, filePath is empty");
+            return;
+        }
+        mCurrentCallSession.startRecording(filePath);
+    }
+
+    /**
+     * 停止录制通话内容。
+     */
+    public void stopRecording() {
+        if (avEngineKit == null) {
+            Log.e(TAG, "stopRecording error, please init first");
+            return;
+        }
+        if (mCurrentCallSession == null) {
+            Log.e(TAG, "stopRecording error, mCurrentCallSession is null");
+            return;
+        }
+        mCurrentCallSession.stopRecording();
+    }
+
 
 }

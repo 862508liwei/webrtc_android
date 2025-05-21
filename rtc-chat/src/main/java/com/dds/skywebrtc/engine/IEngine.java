@@ -118,4 +118,15 @@ public interface IEngine {
      */
     void release();
 
+    /**
+     * 开始录制
+     * @param filePath 文件路径
+     */
+    void startRecording(String filePath);
+
+    /**
+     * 停止录制
+     */
+    void stopRecording();
+
 }
