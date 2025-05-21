@@ -58,4 +58,5 @@ dependencies {
 
     implementation project(path: ':temple1')
     implementation project(path: ':temple2')
+
 }

@@ -40,7 +40,6 @@ import org.webrtc.SurfaceViewRenderer;
 import org.webrtc.VideoCapturer;
 import org.webrtc.VideoDecoderFactory;
 import org.webrtc.VideoEncoderFactory;
-import org.webrtc.VideoSink;
 import org.webrtc.VideoSource;
 import org.webrtc.VideoTrack;
 import org.webrtc.audio.AudioDeviceModule;
@@ -612,7 +611,7 @@ public class WebRTCEngine implements IEngine, Peer.IPeerEvent {
 
             // Create a new ProxyVideoSink for the MediaRecorder surface
             mediaRecorderVideoSink = new ProxyVideoSink();
-            mediaRecorderVideoSink.setTarget((VideoSink) mediaRecorderSurface);
+            mediaRecorderVideoSink.setTarget(mediaRecorderSurface);
             _localVideoTrack.addSink(mediaRecorderVideoSink);
 
 
