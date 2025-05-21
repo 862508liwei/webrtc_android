@@ -194,4 +194,14 @@ public class AVEngine implements IEngine {
         iEngine.release();
     }
 
+    @Override
+    public void startRecording(String filePath) {
+
+    }
+
+    @Override
+    public void stopRecording() {
+
+    }
+
 }
