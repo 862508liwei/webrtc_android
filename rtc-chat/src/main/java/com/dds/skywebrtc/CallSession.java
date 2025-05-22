@@ -204,11 +204,24 @@ public class CallSession implements EngineCallback {
 
     // 开始录制
     public void startRecording(String filePath) {
-        executor.execute(() -> {
-            if (iEngine != null) {
+        Log.d(TAG, "CallSession: startRecording called. filePath: " + filePath + ", iEngine is null? " + (iEngine == null)); // 使用类TAG
+        if (iEngine != null) {
+            Log.i(TAG, "CallSession: iEngine is NOT null. Attempting to call iEngine.startRecording() DIRECTLY.");
+            // 原来的代码:
+            // executor.execute(() -> {
+            //    Log.d(TAG, "CallSession: Executor task: Executing iEngine.startRecording for: " + filePath);
+            //    iEngine.startRecording(filePath);
+            // });
+            // 暂时修改为直接调用，用于调试:
+            try {
                 iEngine.startRecording(filePath);
+                Log.i(TAG, "CallSession: Direct call to iEngine.startRecording() completed.");
+            } catch (Exception e) {
+                Log.e(TAG, "CallSession: Exception during direct call to iEngine.startRecording()", e);
             }
-        });
+        } else {
+            Log.e(TAG, "CallSession: iEngine is NULL. Cannot start recording from CallSession.");
+        }
     }
 
     // 停止录制

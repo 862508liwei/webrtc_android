@@ -1,7 +1,6 @@
 package com.dds.skywebrtc;
 
 import android.content.Context;
-import android.text.TextUtils;
 import android.util.Log;
 
 import com.dds.skywebrtc.exception.NotInitializedException;
@@ -201,19 +200,22 @@ public class SkyEngineKit {
      * @param filePath 录制文件的完整路径。
      */
     public void startRecording(String filePath) {
+        Log.d(TAG, "SkyEngineKit: startRecording called. filePath: " + filePath + ", mCurrentCallSession is null? " + (mCurrentCallSession == null));
         if (avEngineKit == null) {
-            Log.e(TAG, "startRecording error, please init first");
-            return;
-        }
-        if (mCurrentCallSession == null) {
-            Log.e(TAG, "startRecording error, mCurrentCallSession is null");
+            Log.e(TAG, "SkyEngineKit: startRecording error, please init first (avEngineKit is null)");
             return;
         }
         if (TextUtils.isEmpty(filePath)) {
-            Log.e(TAG, "startRecording error, filePath is empty");
+            Log.e(TAG, "SkyEngineKit: startRecording error, filePath is empty");
             return;
         }
-        mCurrentCallSession.startRecording(filePath);
+
+        if (mCurrentCallSession != null) {
+            Log.i(TAG, "SkyEngineKit: mCurrentCallSession is NOT null. Calling mCurrentCallSession.startRecording().");
+            mCurrentCallSession.startRecording(filePath);
+        } else {
+            Log.e(TAG, "SkyEngineKit: mCurrentCallSession is NULL. Cannot start recording from SkyEngineKit.");
+        }
     }
 
     /**
