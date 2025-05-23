@@ -29,6 +29,8 @@ import com.dds.skywebrtc.SkyEngineKit;
 import com.dds.skywebrtc.exception.NotInitializedException;
 import com.dds.webrtc.R;
 
+import java.util.ArrayList; // Added import
+import java.util.Arrays;    // Added import
 import java.util.UUID;
 
 
@@ -113,23 +115,40 @@ public class CallSingleActivity extends BaseActivity implements CallSession.Call
             init(targetId, false, isAudioOnly, false);
         } else {
             // 权限检测
-            String[] per;
-            if (isAudioOnly) {
-                per = new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE};
-            } else {
-                per = new String[]{Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE};
+            ArrayList<String> permissionsList = new ArrayList<>();
+            permissionsList.add(Manifest.permission.RECORD_AUDIO); // RECORD_AUDIO 是必须的
+
+            if (!isAudioOnly) { // isAudioOnly 是用来判断是否为纯音频通话的成员变量
+                permissionsList.add(Manifest.permission.CAMERA); // CAMERA 权限对于视频通话是必须的
             }
-            Permissions.request(this, per, integer -> {
-                Log.d(TAG, "Permissions.request integer = " + integer);
-                if (integer == 0) {
-                    // 权限同意
-                    init(targetId, isOutgoing, isAudioOnly, false);
-                } else {
-                    Toast.makeText(this, "权限被拒绝", Toast.LENGTH_SHORT).show();
-                    // 权限拒绝
-                    finish();
-                }
-            });
+
+            // 只在 Android 9 (API 28) 及以下版本才添加 WRITE_EXTERNAL_STORAGE 到请求列表
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                permissionsList.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+            }
+
+            String[] per = permissionsList.toArray(new String[0]);
+
+            if (per.length > 0) {
+                Log.d(TAG, "Requesting permissions: " + Arrays.toString(per)); // 添加这行日志以查看实际请求的权限
+                Permissions.request(this, per, integer -> {
+                    Log.d(TAG, "Permissions.request result: " + integer + " for permissions: " + Arrays.toString(per));
+                    if (integer == 0) {
+                        // 权限同意
+                        // 确保 init 方法的参数与原来一致
+                        init(targetId, isOutgoing, isAudioOnly, false); // 使用原始的第四个参数 'false'
+                    } else {
+                        // 权限拒绝 - RECORD_AUDIO 或 CAMERA 被拒是致命的
+                        Toast.makeText(this, "核心音视频权限被拒绝，无法继续通话", Toast.LENGTH_LONG).show();
+                        finish();
+                    }
+                });
+            } else {
+                // 如果 per 数组为空，理论上不太可能发生，因为 RECORD_AUDIO 总是需要
+                // 但作为防御性编程，可以直接初始化
+                Log.i(TAG, "No runtime permissions to request, proceeding with init.");
+                 init(targetId, isOutgoing, isAudioOnly, false); // 使用原始的第四个参数 'false'
+            }
         }
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_HEADSET_PLUG);
